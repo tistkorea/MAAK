@@ -1,0 +1,10 @@
+{
+  "name": "mps-printer-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MPS 주방프린터 브릿지 에이전트 - POS 주방프린터 전표를 KDS로 전송",
+  "bin": { "mps-printer-agent": "printer-agent.js" },
+  "scripts": { "start": "node printer-agent.js" },
+  "engines": { "node": ">=18" }
+}

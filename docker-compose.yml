@@ -1,0 +1,38 @@
+# 사용: cp .env.example .env && docker compose up -d --build
+#       docker compose exec app node src/db/seed.js   (데모 데이터)
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mps
+      POSTGRES_USER: mps
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mps}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mps -d mps"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        VITE_SHOW_DEMO: ${SHOW_DEMO:-0}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mps:${DB_PASSWORD:-mps}@db:5432/mps
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 를 .env 에 설정하세요}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-12h}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      MPS_TIMEZONE: ${MPS_TIMEZONE:-Asia/Seoul}
+      PRINTER_ENCODING: ${PRINTER_ENCODING:-euc-kr}
+    ports:
+      - "${APP_PORT:-4000}:4000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,13 @@
+{
+  "name": "mps",
+  "private": true,
+  "description": "MPS - Menu Portal Solution (Kitchen Control System)",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix web install",
+    "dev:server": "npm --prefix server run dev",
+    "dev:web": "npm --prefix web run dev",
+    "seed": "npm --prefix server run seed -- --reset",
+    "test": "npm --prefix server test",
+    "build": "npm --prefix web run build"
+  }
+}
