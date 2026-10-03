@@ -33,13 +33,14 @@ export default function TicketCard({ order, items, now, onItem, onRecipe, showSt
             tabIndex={onItem ? 0 : undefined}
             onKeyDown={(e) => e.key === 'Enter' && onItem?.(it)}
           >
-            <span className="q">{it.qty}</span>
+            <span className="q">{it.qty - (it.cancel_qty || 0)}</span>
             <div>
               <div className="n">{it.name}</div>
               {it.options && <div className="opt">└ {it.options}</div>}
+              {it.cancel_qty > 0 && it.status !== 'cancelled' && <div className="opt" style={{ color: '#f87171' }}>부분취소 {it.cancel_qty}</div>}
               {showStation && <div className="small" style={{ color: '#9ca3af' }}>{it.station_name || '미지정'}</div>}
             </div>
-            <span className="st">{ITEM_STATUS[it.status]}</span>
+            <span className="st">{ITEM_STATUS[it.status]}{it.status === 'partial' ? ` ${it.done_qty}/${it.qty - it.cancel_qty}` : ''}</span>
             {it.menu_item_id && onRecipe && (
               <button className="recipe-btn" onClick={(e) => { e.stopPropagation(); onRecipe(it); }} title="레시피">레시피</button>
             )}

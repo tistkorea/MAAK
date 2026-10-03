@@ -5,6 +5,7 @@ import { Toaster } from './components/ui.jsx';
 import Login from './pages/Login.jsx';
 import Home from './pages/Home.jsx';
 import Kds from './pages/Kds.jsx';
+import MenuPortal from './pages/MenuPortal.jsx';
 import Orders from './pages/Orders.jsx';
 import PosTest from './pages/PosTest.jsx';
 import Stations from './pages/Stations.jsx';
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <>
       <Routes>
+        <Route path="/portal" element={<Guard perm="kds:operate" store><MenuPortal /></Guard>} />
         <Route path="/kds" element={<Guard perm="kds:operate" store><Kds /></Guard>} />
         <Route element={<Layout />}>
           <Route index element={<Home />} />

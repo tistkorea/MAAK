@@ -19,7 +19,7 @@ export function useStoreSocket(storeId, handlers, onStatus) {
     socket.on('connect', join);
     socket.on('disconnect', () => statusRef.current?.('offline'));
     socket.on('connect_error', () => statusRef.current?.('offline'));
-    for (const ev of ['order:created', 'order:updated', 'menu:changed', 'stations:changed']) {
+    for (const ev of ['order:created', 'order:updated', 'menu:changed', 'stations:changed', 'request:changed']) {
       socket.on(ev, (payload) => ref.current[ev]?.(payload));
     }
     return () => socket.disconnect();

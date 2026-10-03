@@ -8,14 +8,15 @@ import { badRequest, parse } from '../errors.js';
 import { createOrder, cancelByPosOrderNo } from '../services/orderService.js';
 import { ingestTicket } from '../services/ticketIngest.js';
 import { emitStore } from '../realtime/socket.js';
-import { orderInput } from './stores.js';
+import { createRequest, orderInput, requestInput } from './stores.js';
 
 const r = Router();
 r.use(requireDevice);
 
 r.post('/orders', async (req, res) => {
   const b = parse(orderInput, req.body);
-  const { order, duplicate } = await createOrder(req.device.store_id, { ...b, source: 'pos' });
+  const source = req.device.type === 'table_order' ? 'table_order' : 'pos';
+  const { order, duplicate } = await createOrder(req.device.store_id, { ...b, source });
   if (!duplicate) emitStore(req.device.store_id, 'order:created', order);
   res.status(duplicate ? 200 : 201).json({ id: order.id, displayNo: order.display_no, duplicate });
 });
@@ -25,6 +26,14 @@ r.post('/orders/cancel', async (req, res) => {
   const orders = await cancelByPosOrderNo(req.device.store_id, b.posOrderNo);
   for (const o of orders) emitStore(req.device.store_id, 'order:updated', o);
   res.json({ cancelled: orders.map((o) => o.id) });
+});
+
+// 테이블오더/POS 에서 직원 호출·고객 요청 전송
+r.post('/requests', async (req, res) => {
+  const b = parse(requestInput, req.body);
+  const source = req.device.type === 'table_order' ? 'table_order' : 'pos';
+  const row = await createRequest(req.device.store_id, b, { source });
+  res.status(201).json({ id: row.id });
 });
 
 // body: application/octet-stream (원본 바이트) 또는 JSON { data: base64, encoding? }

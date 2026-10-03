@@ -24,7 +24,8 @@ function beep() {
 }
 
 const ACTIVE = ['received', 'cooking', 'ready'];
-const ITEM_NEXT = { pending: 'start', cooking: 'done', done: 'recall' };
+const ITEM_NEXT = { pending: 'cooking', cooking: 'ready', partial: 'ready', ready: 'recall', served: 'recall' };
+const cooked = (i) => i.status === 'ready' || i.status === 'served';
 
 export default function Kds() {
   const { storeId, store, stores, setStoreId, can } = useAuth();
@@ -141,7 +142,7 @@ export default function Kds() {
     const served = orders.filter((o) => o.status === 'served').sort((a, b) => new Date(b.served_at) - new Date(a.served_at)).slice(0, 10);
     const card = (o) => {
       const items = o.items.filter((i) => i.status !== 'cancelled');
-      const done = items.filter((i) => i.status === 'done').length;
+      const done = items.filter(cooked).length;
       const isReady = o.status === 'ready';
       const wait = isReady ? elapsedSec(o.ready_at, now) : null;
       return (
@@ -192,28 +193,28 @@ export default function Kds() {
   const forStation = (o) => o.items.filter((i) => i.status !== 'cancelled' && (stationId == null || i.station_id === stationId));
   const tickets = orders.filter((o) => ACTIVE.includes(o.status))
     .map((o) => ({ order: o, items: forStation(o) }))
-    .filter((t) => t.items.some((i) => i.status !== 'done'))
+    .filter((t) => t.items.some((i) => !cooked(i)))
     .sort((a, b) => (b.order.rush - a.order.rush) || new Date(a.order.created_at) - new Date(b.order.created_at));
   const recent = orders
     .map((o) => ({ order: o, items: forStation(o) }))
-    .filter((t) => t.order.status !== 'cancelled' && t.items.length && t.items.every((i) => i.status === 'done'))
+    .filter((t) => t.order.status !== 'cancelled' && t.items.length && t.items.every(cooked))
     .sort((a, b) => Math.max(...b.items.map((i) => +new Date(i.done_at))) - Math.max(...a.items.map((i) => +new Date(i.done_at))))
     .slice(0, 10);
-  const pendingQty = tickets.reduce((s, t) => s + t.items.filter((i) => i.status !== 'done').reduce((a, i) => a + i.qty, 0), 0);
+  const pendingQty = tickets.reduce((s, t) => s + t.items.filter((i) => !cooked(i)).reduce((a, i) => a + i.qty - i.cancel_qty, 0), 0);
 
   return (
     <div className="kds">
       {bar}
       <div className="kds-bar" style={{ paddingTop: 4, paddingBottom: 4 }}>
         <span className="small">대기 티켓 <b>{tickets.length}</b> · 남은 수량 <b>{pendingQty}</b></span>
-        <span className="small" style={{ color: '#9ca3af' }}>품목을 탭: 대기 → 조리중 → 완료 (완료 품목 탭 시 되돌리기)</span>
+        <span className="small" style={{ color: '#9ca3af' }}>품목을 탭: 대기 → 조리중 → 호출(조리완료) · 호출 품목 탭 시 되돌리기</span>
       </div>
       <div className="kds-board">
         {tickets.map(({ order, items }) => (
           <TicketCard key={order.id} order={order} items={items} now={now} showStation={stationId == null}
             onRecipe={openRecipe}
             onItem={(it) => act(`/orders/items/${it.id}/${ITEM_NEXT[it.status]}`)}
-            footer={<button className="bump" onClick={() => act(`/orders/${order.id}/bump`, { stationId })}>완료 BUMP</button>}
+            footer={<button className="bump" onClick={() => act(`/orders/${order.id}/bump`, { stationId })}>조리완료 · 호출</button>}
           />
         ))}
         {!tickets.length && <div className="empty" style={{ gridColumn: '1 / -1' }}>대기 중인 주문이 없습니다</div>}

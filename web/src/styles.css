@@ -156,8 +156,9 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .titem .opt { font-size: 14px; color: #fbbf24; }
 .titem .st { margin-left: auto; font-size: 11px; padding: 2px 6px; border-radius: 6px; background: #262b33; white-space: nowrap; }
 .titem.cooking .st { background: #1d4ed8; color: #fff; }
-.titem.done { opacity: .45; } .titem.done .n { text-decoration: line-through; }
-.titem.done .st { background: var(--ok); color: #fff; }
+.titem.ready, .titem.served { opacity: .45; } .titem.ready .n, .titem.served .n { text-decoration: line-through; }
+.titem.ready .st { background: var(--ok); color: #fff; } .titem.served .st { background: #2563eb; color: #fff; }
+.titem.partial .st { background: #93c5fd; color: #1e3a8a; }
 .titem .recipe-btn { background: none; border: 1px solid #374151; border-radius: 6px; color: #9ca3af; font-size: 11px; padding: 1px 6px; cursor: pointer; }
 .ticket-memo { margin: 0 10px 8px; padding: 6px 8px; background: #422006; color: #fde68a; border-radius: 6px; font-size: 14px; }
 .ticket-foot { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #262b33; }

@@ -5,7 +5,8 @@ import { ROLE_LABEL } from '../format.js';
 
 export const NAV = [
   { group: '주방 운영', items: [
-    { to: '/kds', label: 'KDS 주방화면', perm: 'kds:operate', store: true },
+    { to: '/portal', label: 'MENU PORTAL (테이블)', perm: 'kds:operate', store: true },
+    { to: '/kds', label: '스테이션 KDS', perm: 'kds:operate', store: true },
     { to: '/kds?view=expo', label: '패스 · 서빙', perm: 'kds:operate', store: true },
     { to: '/orders', label: '주문 현황', perm: 'kds:operate', store: true },
     { to: '/pos-test', label: 'POS 연동 · 테스트', perm: 'order:create', store: true },

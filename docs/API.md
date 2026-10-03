@@ -36,16 +36,25 @@
 | GET | /menu | 매장 메뉴(본부 마스터 + 품절/스테이션/가격) |
 | PUT | /menu/:menuItemId | menu:store `{soldOut?, stationId?, price?}` |
 | GET | /orders?scope=active\|all&date=YYYY-MM-DD | kds:operate |
-| POST | /orders | order:create (수동 주문) |
+| POST | /orders | order:create (수동 주문) `{..., guestCount?, channel?: manual\|pos\|table_order}` |
 | POST | /print-test | order:create `{text, commit?}` 전표 파싱 미리보기/생성 |
-| GET/POST | /devices | device:manage (POST 응답의 `key`는 1회만 노출) |
+| GET/POST | /requests | kds:operate 직원 호출·고객 요청 조회/등록 `{type: staff_call\|customer_request, tableNo?, category?, message?}` |
+| PATCH | /requests/:id | `{status: ack\|done\|cancelled}` |
+| GET/POST | /devices | device:manage, type: pos\|printer_agent\|table_order\|kds (POST 응답의 `key`는 1회만 노출) |
 | PATCH | /devices/:id | `{active}` |
 
 ## KDS 처리 (`kds:operate`)
 | 메서드 | 경로 | 설명 |
 |---|---|---|
 | GET | /orders/:id | 주문 상세 |
-| POST | /orders/items/:itemId/start\|done\|recall\|cancel | 품목 상태 변경 (cancel은 order:manage) |
+| GET | /orders/:id/events | 조리 진행 이력 (시각·상태·수량·작업자·사유) |
+| POST | /orders/items/:itemId/pending | 대기로 되돌리기 (진행 수량 0일 때) |
+| POST | /orders/items/:itemId/cooking | 조리중 (호출/완료 상태에서는 되돌리기) |
+| POST | /orders/items/:itemId/progress | `{doneQty}` 진행 수량 지정 → 일부완료/호출 |
+| POST | /orders/items/:itemId/ready | 호출 (조리완료) |
+| POST | /orders/items/:itemId/served | 완료 (제공) |
+| POST | /orders/items/:itemId/cancel | `{qty?, reason?}` 취소/부분취소 (order:manage) |
+| POST | /orders/items/:itemId/recall | 되돌리기 (구버전 별칭: start=cooking, done=ready) |
 | POST | /orders/:id/bump | `{stationId?}` 스테이션 품목 일괄 완료 (생략 시 전체) |
 | POST | /orders/:id/recall | `{stationId?}` 완료 품목 되돌리기 |
 | POST | /orders/:id/serve | `{force?}` 서빙 완료 (force는 order:manage) |
@@ -80,6 +89,10 @@ Content-Type: application/json
 ```
 응답 `201 {id, displayNo, duplicate:false}` / 같은 externalId 재전송 시 `200 {duplicate:true}`
 
+### 테이블오더 (연결 키 유형 `table_order`)
+`POST /api/pos/orders` 와 같으며 `guestCount`를 함께 보내면 인원 분석에 쓰입니다. 유입경로는 `table_order`로 기록됩니다.
+직원 호출·고객 요청: `POST /api/pos/requests` `{ "type": "customer_request", "tableNo": "3", "category": "물", "message": "물 2병" }`
+
 ### POS 주문 취소
 `POST /api/pos/orders/cancel` `{ "posOrderNo": "0012" }`
 
@@ -104,4 +117,5 @@ socket.on('order:created', (order) => {});
 socket.on('order:updated', (order) => {});
 socket.on('menu:changed', () => {});
 socket.on('stations:changed', () => {});
+socket.on('request:changed', (request) => {});
 ```

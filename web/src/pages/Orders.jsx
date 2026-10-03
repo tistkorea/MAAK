@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { post } from '../api.js';
+import { useEffect, useState } from 'react';
+import { api, post } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { useApi } from '../hooks.js';
 import { useStoreSocket } from '../socket.js';
 import { ErrorBox, Modal, toast, toastError } from '../components/ui.jsx';
-import { ITEM_STATUS, ORDER_STATUS, ORDER_TYPE, mmss, time, today } from '../format.js';
+import { EVENT_LABEL, ITEM_STATUS, ORDER_STATUS, ORDER_TYPE, SOURCE_LABEL, mmss, time, today } from '../format.js';
 
 const TONE = { received: 'info', cooking: 'warn', ready: 'ok', served: '', cancelled: 'danger' };
 
@@ -45,12 +45,12 @@ export default function Orders() {
                 <tr key={o.id} onClick={() => setDetail(o)} style={{ cursor: 'pointer' }}>
                   <td><b>#{o.display_no}</b>{o.rush && <span className="badge late" style={{ marginLeft: 4 }}>긴급</span>}</td>
                   <td>{time(o.created_at)}</td>
-                  <td>{o.table_no ? `T${o.table_no} · ` : ''}{ORDER_TYPE[o.order_type]}</td>
-                  <td className="small">{o.items.map((i) => `${i.name}×${i.qty}`).join(', ')}</td>
+                  <td>{o.table_no ? `T${o.table_no} · ` : ''}{ORDER_TYPE[o.order_type]}{o.guest_count ? ` · ${o.guest_count}명` : ''}</td>
+                  <td className="small">{o.items.map((i) => `${i.name}×${i.qty - i.cancel_qty}${i.cancel_qty ? `(취소${i.cancel_qty})` : ''}`).join(', ')}</td>
                   <td><span className={`badge ${TONE[o.status]}`}>{ORDER_STATUS[o.status]}</span></td>
                   <td><span className={late ? 'badge late' : ''}>{mmss(cook)}</span> <span className="small muted">/ {o.target_minutes}분</span></td>
                   <td>{mmss(secs(o.ready_at, o.served_at))}</td>
-                  <td className="small">{o.source}</td>
+                  <td className="small">{SOURCE_LABEL[o.source]}</td>
                 </tr>
               );
             })}
@@ -77,23 +77,48 @@ export default function Orders() {
             {detail.pos_order_no && ` · POS ${detail.pos_order_no}`}
           </p>
           <table className="table">
-            <thead><tr><th>메뉴</th><th>수량</th><th>스테이션</th><th>상태</th><th>조리시간</th></tr></thead>
+            <thead><tr><th>메뉴</th><th>수량</th><th>스테이션</th><th>상태</th><th>조리시간</th><th>작업자</th></tr></thead>
             <tbody>
               {detail.items.map((i) => (
                 <tr key={i.id}>
                   <td>{i.name}{i.options && <div className="small muted">└ {i.options}</div>}</td>
-                  <td>{i.qty}</td>
+                  <td>{i.qty - i.cancel_qty}{i.cancel_qty > 0 && <span className="small muted"> (취소 {i.cancel_qty})</span>}</td>
                   <td><span className="swatch" style={{ background: i.station_color }} />{i.station_name}</td>
                   <td>{ITEM_STATUS[i.status]}</td>
-                  <td>{mmss(secs(detail.created_at, i.done_at))}</td>
+                  <td>{mmss(secs(i.started_at, i.done_at))}</td>
+                  <td>{i.done_by_name || '-'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {detail.memo && <p>📝 {detail.memo}</p>}
+          <OrderHistory orderId={detail.id} stamp={JSON.stringify(detail.items.map((i) => [i.status, i.done_qty, i.cancel_qty]))} />
           {detail.raw_ticket && (<><h3 style={{ marginTop: 12 }}>프린터 원문</h3><pre className="code">{detail.raw_ticket}</pre></>)}
         </Modal>
       )}
     </div>
+  );
+}
+
+function OrderHistory({ orderId, stamp }) {
+  const [events, setEvents] = useState([]);
+  useEffect(() => { api(`/orders/${orderId}/events`).then(setEvents).catch(() => {}); }, [orderId, stamp]);
+  if (!events.length) return null;
+  return (
+    <>
+      <h3 style={{ marginTop: 12 }}>조리 진행 이력</h3>
+      <table className="table">
+        <thead><tr><th>시간</th><th>메뉴</th><th>상태</th><th>수량</th><th>작업자</th><th>사유</th></tr></thead>
+        <tbody>
+          {events.map((e) => (
+            <tr key={e.id}>
+              <td className="small">{new Date(e.created_at).toLocaleTimeString('ko-KR', { hour12: false })}</td>
+              <td>{e.item_name || '-'}</td><td>{EVENT_LABEL[e.event]}</td><td>{e.qty ?? '-'}</td>
+              <td>{e.user_name || '-'}</td><td className="small">{e.reason || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

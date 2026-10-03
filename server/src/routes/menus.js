@@ -60,6 +60,7 @@ const itemBody = z.object({
   price: z.number().int().min(0).optional(),
   stationType: z.string().min(1).max(30).optional(),
   targetMinutes: z.number().int().min(1).max(180).optional(),
+  minMinutes: z.number().int().min(1).max(180).nullable().optional(),
   recipe: z.array(z.string().max(500)).optional(),
   allergens: z.array(z.string().max(40)).optional(),
   description: z.string().max(1000).nullable().optional(),
@@ -74,11 +75,11 @@ r.post('/items', requirePerm('menu:master'), async (req, res) => {
   if (dup.rows[0]) throw conflict('이미 존재하는 메뉴 코드입니다');
   const { rows } = await query(
     `INSERT INTO menu_items (hq_id, category_id, code, name, aliases, price, station_type, target_minutes,
-                             recipe, allergens, description, active, sort_order)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+                             recipe, allergens, description, active, sort_order, min_minutes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
     [hq.id, b.categoryId ?? null, b.code, b.name, b.aliases ?? [], b.price ?? 0, b.stationType ?? 'main',
       b.targetMinutes ?? 10, JSON.stringify(b.recipe ?? []), b.allergens ?? [], b.description ?? null,
-      b.active ?? true, b.sortOrder ?? 0],
+      b.active ?? true, b.sortOrder ?? 0, b.minMinutes ?? null],
   );
   await audit(req, 'menu.item_create', { entity: 'menu_item', entityId: rows[0].id, orgId: hq.id, detail: { code: b.code, name: b.name } });
   res.status(201).json(rows[0]);
@@ -102,10 +103,11 @@ r.patch('/items/:id', requirePerm('menu:master'), async (req, res) => {
     description: b.description !== undefined ? b.description : item.description,
     active: b.active ?? item.active,
     sort_order: b.sortOrder ?? item.sort_order,
+    min_minutes: b.minMinutes !== undefined ? b.minMinutes : item.min_minutes,
   };
   const { rows } = await query(
     `UPDATE menu_items SET category_id=$2, code=$3, name=$4, aliases=$5, price=$6, station_type=$7,
-            target_minutes=$8, recipe=$9, allergens=$10, description=$11, active=$12, sort_order=$13, updated_at=now()
+            target_minutes=$8, recipe=$9, allergens=$10, description=$11, active=$12, sort_order=$13, min_minutes=$14, updated_at=now()
       WHERE id = $1 RETURNING *`,
     [item.id, ...Object.values(merged)],
   );

@@ -106,6 +106,7 @@ export const orderInput = z.object({
   externalId: z.string().max(80).optional().nullable(),
   posOrderNo: z.string().max(40).optional().nullable(),
   tableNo: z.string().max(20).optional().nullable(),
+  guestCount: z.number().int().min(1).max(200).optional().nullable(),
   orderType: z.enum(['dine_in', 'takeout', 'delivery']).optional(),
   memo: z.string().max(500).optional().nullable(),
   rush: z.boolean().optional(),
@@ -119,8 +120,8 @@ export const orderInput = z.object({
 });
 
 r.post('/orders', requirePerm('order:create'), async (req, res) => {
-  const b = parse(orderInput, req.body);
-  const { order } = await createOrder(req.store.id, { ...b, source: 'manual' }, req.user.id);
+  const b = parse(orderInput.extend({ channel: z.enum(['manual', 'pos', 'table_order']).optional() }), req.body);
+  const { order } = await createOrder(req.store.id, { ...b, source: b.channel || 'manual' }, req.user.id);
   emitStore(req.store.id, 'order:created', order);
   await audit(req, 'order.create', { entity: 'order', entityId: order.id, orgId: req.store.id });
   res.status(201).json(order);
@@ -135,6 +136,50 @@ r.post('/print-test', requirePerm('order:create'), async (req, res) => {
   res.json(result);
 });
 
+// ---------- 직원 호출 / 고객 요청 ----------
+export const requestInput = z.object({
+  type: z.enum(['staff_call', 'customer_request']),
+  tableNo: z.string().max(20).optional().nullable(),
+  orderId: z.number().int().optional().nullable(),
+  category: z.string().max(30).optional().nullable(),
+  message: z.string().max(300).optional().nullable(),
+});
+
+export async function createRequest(storeId, b, { source, userId }) {
+  const { rows } = await query(
+    `INSERT INTO service_requests (store_id, table_no, order_id, type, category, message, source, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+    [storeId, b.tableNo || null, b.orderId || null, b.type, b.category || null, b.message || null, source, userId ?? null]);
+  emitStore(storeId, 'request:changed', rows[0]);
+  return rows[0];
+}
+
+r.get('/requests', requirePerm('kds:operate'), async (req, res) => {
+  const { rows } = await query(
+    `SELECT q.*, u.name AS handled_by_name FROM service_requests q LEFT JOIN users u ON u.id = q.handled_by
+      WHERE q.store_id = $1 AND (q.status IN ('open','ack') OR q.created_at > now() - interval '30 minutes')
+      ORDER BY q.created_at`, [req.store.id]);
+  res.json(rows);
+});
+
+r.post('/requests', requirePerm('kds:operate'), async (req, res) => {
+  const b = parse(requestInput, req.body);
+  res.status(201).json(await createRequest(req.store.id, b, { source: 'staff', userId: req.user.id }));
+});
+
+r.patch('/requests/:id', requirePerm('kds:operate'), async (req, res) => {
+  const b = parse(z.object({ status: z.enum(['ack', 'done', 'cancelled']) }), req.body);
+  const { rows } = await query(
+    `UPDATE service_requests SET status = $3::text, handled_by = $4,
+            ack_at = COALESCE(ack_at, now()),
+            done_at = CASE WHEN $3::text IN ('done','cancelled') THEN now() ELSE done_at END
+      WHERE id = $1 AND store_id = $2 AND status IN ('open','ack') RETURNING *`,
+    [Number(req.params.id), req.store.id, b.status, req.user.id]);
+  if (!rows[0]) throw notFound('처리 가능한 요청이 없습니다');
+  emitStore(req.store.id, 'request:changed', rows[0]);
+  res.json(rows[0]);
+});
+
 // ---------- 디바이스(POS / 프린터 에이전트) ----------
 r.get('/devices', requirePerm('device:manage'), async (req, res) => {
   const { rows } = await query(
@@ -144,7 +189,7 @@ r.get('/devices', requirePerm('device:manage'), async (req, res) => {
 });
 
 r.post('/devices', requirePerm('device:manage'), async (req, res) => {
-  const b = parse(z.object({ name: z.string().min(1).max(60), type: z.enum(['pos', 'printer_agent', 'kds']) }), req.body);
+  const b = parse(z.object({ name: z.string().min(1).max(60), type: z.enum(['pos', 'printer_agent', 'kds', 'table_order']) }), req.body);
   const key = generateDeviceKey();
   const { rows } = await query(
     `INSERT INTO devices (store_id, name, type, key_prefix, key_hash) VALUES ($1,$2,$3,$4,$5)

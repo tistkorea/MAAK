@@ -191,3 +191,105 @@ test('시스템/감사 로그 권한', async () => {
   assert.equal(logs.status, 200);
   assert.ok(logs.body.some((l) => l.action === 'menu.item_update'));
 });
+
+test('수량 단위 진행: 일부완료 → 호출 → 완료, 부분취소, 진행 이력(작업자)', async () => {
+  const { body: o } = await as('manager').post(`/api/stores/${storeId}/orders`, {
+    tableNo: '3', guestCount: 4, channel: 'table_order',
+    items: [{ name: '들깨손면', qty: 2 }, { name: '메밀만두', qty: 3 }],
+  });
+  assert.equal(o.source, 'table_order');
+  assert.equal(o.guest_count, 4);
+  const [noodle, mandu] = o.items;
+  assert.equal(noodle.min_minutes != null, true); // 기준시간 범위 스냅샷
+
+  let r = await as('staff').post(`/api/orders/items/${noodle.id}/cooking`);
+  assert.equal(r.body.items[0].status, 'cooking');
+  r = await as('staff').post(`/api/orders/items/${noodle.id}/progress`, { doneQty: 1 });
+  assert.equal(r.body.items[0].status, 'partial');
+  assert.equal(r.body.items[0].done_qty, 1);
+  assert.equal((await as('staff').post(`/api/orders/items/${noodle.id}/progress`, { doneQty: 3 })).status, 400);
+  r = await as('staff').post(`/api/orders/items/${noodle.id}/progress`, { doneQty: 2 });
+  assert.equal(r.body.items[0].status, 'ready'); // 호출
+  assert.ok(r.body.items[0].done_at);
+
+  // 부분취소: 스텝 불가, 매니저 가능
+  assert.equal((await as('staff').post(`/api/orders/items/${mandu.id}/cancel`, { qty: 1 })).status, 403);
+  r = await as('manager').post(`/api/orders/items/${mandu.id}/cancel`, { qty: 1, reason: '고객 변심' });
+  assert.equal(r.body.items[1].cancel_qty, 1);
+  assert.equal(r.body.items[1].live_qty, 2);
+  assert.equal(r.body.items[1].status, 'pending');
+  assert.equal(r.body.status, 'cooking');
+
+  // 완료(제공) 버튼은 대기 상태에서도 바로 처리
+  r = await as('staff').post(`/api/orders/items/${mandu.id}/served`);
+  assert.equal(r.body.items[1].status, 'served');
+  assert.equal(r.body.status, 'ready'); // 들깨손면은 호출 상태
+  r = await as('staff').post(`/api/orders/items/${noodle.id}/served`);
+  assert.equal(r.body.status, 'served');
+  assert.ok(r.body.served_at);
+
+  // 되돌리기 → 주문 재오픈
+  r = await as('staff').post(`/api/orders/items/${noodle.id}/recall`);
+  assert.equal(r.body.items[0].status, 'cooking');
+  assert.equal(r.body.status, 'cooking');
+
+  const ev = (await as('staff').get(`/api/orders/${o.id}/events`)).body;
+  const kinds = ev.filter((e) => e.item_id === noodle.id).map((e) => e.event);
+  assert.deepEqual(kinds, ['received', 'cooking', 'partial', 'ready', 'served', 'recall']);
+  assert.ok(ev.find((e) => e.event === 'partial').user_name);
+  const cancel = ev.find((e) => e.event === 'partial_cancel');
+  assert.equal(cancel.qty, 1);
+  assert.equal(cancel.reason, '고객 변심');
+});
+
+test('대기로 되돌리기 규칙 / 전체 수량 취소 시 품목 취소', async () => {
+  const { body: o } = await as('manager').post(`/api/stores/${storeId}/orders`, { tableNo: '8', items: [{ name: '감자전', qty: 2 }] });
+  const id = o.items[0].id;
+  await as('staff').post(`/api/orders/items/${id}/cooking`);
+  let r = await as('staff').post(`/api/orders/items/${id}/pending`);
+  assert.equal(r.body.items[0].status, 'pending');
+  assert.equal(r.body.items[0].started_at, null);
+  await as('staff').post(`/api/orders/items/${id}/progress`, { doneQty: 1 });
+  assert.equal((await as('staff').post(`/api/orders/items/${id}/pending`)).status, 409);
+  r = await as('manager').post(`/api/orders/items/${id}/cancel`, { qty: 2 });
+  assert.equal(r.body.items[0].status, 'cancelled');
+  assert.equal(r.body.status, 'cancelled');
+});
+
+test('직원 호출 · 고객 요청', async () => {
+  const c = await as('staff').post(`/api/stores/${storeId}/requests`, { type: 'customer_request', tableNo: '3', category: '물' });
+  assert.equal(c.status, 201, c.text);
+  const list = (await as('staff').get(`/api/stores/${storeId}/requests`)).body;
+  assert.ok(list.some((q) => q.id === c.body.id && q.status === 'open'));
+  assert.equal((await as('staff').patch(`/api/stores/${storeId}/requests/${c.body.id}`, { status: 'ack' })).body.status, 'ack');
+  const done = await as('staff').patch(`/api/stores/${storeId}/requests/${c.body.id}`, { status: 'done' });
+  assert.ok(done.body.done_at);
+  assert.equal((await as('staff').patch(`/api/stores/${storeId}/requests/${c.body.id}`, { status: 'done' })).status, 404);
+
+  // 테이블오더 단말
+  const dev = await as('manager').post(`/api/stores/${storeId}/devices`, { name: '테이블오더', type: 'table_order' });
+  const o = await request(app).post('/api/pos/orders').set('X-Device-Key', dev.body.key)
+    .send({ tableNo: '2', guestCount: 2, items: [{ name: '평양냉면', qty: 2 }] });
+  assert.equal(o.status, 201, o.text);
+  assert.equal((await as('staff').get(`/api/orders/${o.body.id}`)).body.source, 'table_order');
+  const rq = await request(app).post('/api/pos/requests').set('X-Device-Key', dev.body.key)
+    .send({ type: 'staff_call', tableNo: '2' });
+  assert.equal(rq.status, 201);
+});
+
+test('분석: 이벤트 기반 지표', async () => {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  const from = new Date(Date.now() - 7 * 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
+  const { body: s } = await as('owner').get(`/api/analytics/summary?orgId=${storeId}&from=${from}&to=${today}`);
+  for (const k of ['avg_pickup_sec', 'avg_first_item_sec', 'avg_sync_gap_sec', 'avg_start_wait_sec', 'guests', 'cancel_qty']) {
+    assert.ok(s.kpi[k] != null, k);
+  }
+  assert.ok(s.workers.some((w) => w.name === '김주방' && w.cooked_qty > 0));
+  assert.ok(s.channels.some((c) => c.source === 'table_order'));
+  assert.ok(s.tables.length > 0);
+  assert.ok(s.requests.length > 0);
+  assert.ok(s.pairs.length > 0);
+  assert.ok(s.heatmap.length > 0);
+  assert.ok(s.cancelReasons.length > 0);
+  assert.ok(s.menus.some((m) => m.fast_rate != null));
+});

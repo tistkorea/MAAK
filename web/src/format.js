@@ -1,6 +1,25 @@
 export const ORDER_TYPE = { dine_in: '매장', takeout: '포장', delivery: '배달' };
 export const ORDER_STATUS = { received: '접수', cooking: '조리중', ready: '조리완료', served: '서빙완료', cancelled: '취소' };
-export const ITEM_STATUS = { pending: '대기', cooking: '조리중', done: '완료', cancelled: '취소' };
+export const ITEM_STATUS = { pending: '대기', cooking: '조리중', partial: '일부완료', ready: '호출', served: '완료', cancelled: '취소' };
+// 조리 상태 정의 (MENU PORTAL 범례)
+export const STATUS_META = {
+  served:    { label: '완료',     icon: '✔', desc: '조리·제공이 완료된 상태' },
+  partial:   { label: '일부완료', icon: '◐', desc: '일부 수량 완료' },
+  pending:   { label: '대기',     icon: '⧗', desc: '조리 대기 상태' },
+  cooking:   { label: '조리중',   icon: '🔥', desc: '현재 조리 진행 중' },
+  ready:     { label: '호출',     icon: '🔔', desc: '조리 완료 · 홀 픽업 호출' },
+  partial_cancel: { label: '부분취소', icon: '⊖', desc: '일부 수량 취소' },
+  cancelled: { label: '취소',     icon: '✕', desc: '주문 전체 취소' },
+};
+export const EVENT_LABEL = {
+  received: '접수', pending: '대기', cooking: '조리중', partial: '일부완료', ready: '호출', served: '완료',
+  partial_cancel: '부분취소', cancelled: '취소', recall: '되돌림', rush: '긴급',
+};
+export const EVENT_STATUS = { received: 'pending', recall: 'cooking', rush: 'cooking' }; // 이력 칩 색상
+export const SOURCE_LABEL = { pos: 'POS', printer: '주방프린터', manual: '수동', table_order: '테이블오더' };
+export const REQUEST_TYPE = { staff_call: '직원 호출', customer_request: '고객 요청' };
+export const CANCEL_REASONS = ['고객 변심', '오주문', '재료 소진', '대기시간 지연', '기타'];
+export const isCooked = (it) => it.status === 'ready' || it.status === 'served';
 export const ORG_TYPE = { platform: '개발팀', hq: '가맹본부', branch: '가맹지점', store: '가맹점' };
 export const ROLE_LABEL = {
   developer: '개발팀', hq_admin: '가맹본부', branch_admin: '가맹지점',
@@ -39,3 +58,7 @@ export function urgency(elapsed, targetMin) {
   if (r >= 0.7) return 'warn';
   return 'ok';
 }
+
+const pad = (n) => String(n).padStart(2, '0');
+export const hms = (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; };
+export const hm = (v) => { const d = new Date(v); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };

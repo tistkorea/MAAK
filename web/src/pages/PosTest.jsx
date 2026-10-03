@@ -38,6 +38,8 @@ function PosSimulator({ storeId }) {
   const { data: menu } = useApi(`/stores/${storeId}/menu`);
   const [cart, setCart] = useState([]);
   const [tableNo, setTableNo] = useState('');
+  const [guests, setGuests] = useState('2');
+  const [channel, setChannel] = useState('pos');
   const [orderType, setOrderType] = useState('dine_in');
   const [memo, setMemo] = useState('');
   const [rush, setRush] = useState(false);
@@ -51,7 +53,8 @@ function PosSimulator({ storeId }) {
   const submit = async () => {
     try {
       const o = await post(`/stores/${storeId}/orders`, {
-        tableNo: tableNo || null, orderType, memo: memo || null, rush,
+        tableNo: tableNo || null, orderType, memo: memo || null, rush, channel,
+        guestCount: orderType === 'dine_in' && Number(guests) > 0 ? Number(guests) : null,
         items: cart.map(({ menuItemId, name, qty, options }) => ({ menuItemId, name, qty, options: options || null })),
       });
       toast(`주문 #${o.display_no} 전송 → 주방 ${new Set(o.items.map((i) => i.station_name)).size}개 파트`);
@@ -81,6 +84,12 @@ function PosSimulator({ storeId }) {
         <h3>주문서</h3>
         <div className="grid2">
           <label className="field">테이블<input className="input" value={tableNo} onChange={(e) => setTableNo(e.target.value)} /></label>
+          <label className="field">인원<input className="input" type="number" min="1" value={guests} onChange={(e) => setGuests(e.target.value)} /></label>
+          <label className="field">유입경로
+            <select className="input" value={channel} onChange={(e) => setChannel(e.target.value)}>
+              <option value="pos">POS</option><option value="table_order">테이블오더</option><option value="manual">수동</option>
+            </select>
+          </label>
           <label className="field">유형
             <select className="input" value={orderType} onChange={(e) => setOrderType(e.target.value)}>
               <option value="dine_in">매장</option><option value="takeout">포장</option><option value="delivery">배달</option>

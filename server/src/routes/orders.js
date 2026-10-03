@@ -30,20 +30,37 @@ r.get('/:id', async (req, res) => {
   res.json(await svc.getOrder(Number(req.params.id)));
 });
 
-// 품목 단위: start(조리시작) / done(완료) / recall(되돌리기) / cancel(취소)
+// 조리 진행 이력 (시각·상태·수량·작업자)
+r.get('/:id/events', async (req, res) => {
+  const o = await loadAccessibleOrder(req, Number(req.params.id));
+  res.json(await svc.getOrderEvents(o.id));
+});
+
+const itemBody = z.object({
+  qty: z.number().int().min(1).optional(),
+  doneQty: z.number().int().min(0).optional(),
+  reason: z.string().max(200).optional(),
+});
+
+// 품목 단위: pending(대기) cooking(조리중) progress(진행수량) ready(호출) served(완료) cancel(취소/부분취소) recall
+// (구버전 호환: start=cooking, done=ready)
 r.post('/items/:itemId/:action', async (req, res) => {
   const itemId = Number(req.params.itemId);
   const { rows } = await query('SELECT order_id FROM order_items WHERE id = $1', [itemId]);
   if (!rows[0]) throw notFound('주문 품목을 찾을 수 없습니다');
-  await loadAccessibleOrder(req, rows[0].order_id);
-  if (req.params.action === 'cancel' && !hasPermission(req.user.role, 'order:manage')) throw forbidden();
-  const order = await svc.itemAction(itemId, req.params.action, req.user.id);
+  const o = await loadAccessibleOrder(req, rows[0].order_id);
+  const b = parse(itemBody, req.body);
+  if (req.params.action === 'cancel' && !hasPermission(req.user.role, 'order:manage')) throw forbidden('취소는 매니저 이상만 가능합니다');
+  const order = await svc.itemAction(itemId, req.params.action, req.user.id, b);
+  if (req.params.action === 'cancel') {
+    await audit(req, 'order.item_cancel', { entity: 'order_item', entityId: itemId, orgId: o.store_id, detail: b });
+  }
   res.json(publish(order));
 });
 
 const stationBody = z.object({ stationId: z.number().int().nullable().optional() });
 
-// 스테이션 티켓 일괄 완료
+// 스테이션 티켓 일괄 조리완료(호출)
 r.post('/:id/bump', async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
   const b = parse(stationBody, req.body);
@@ -53,7 +70,7 @@ r.post('/:id/bump', async (req, res) => {
 r.post('/:id/recall', async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
   const b = parse(stationBody, req.body);
-  res.json(publish(await svc.recallStation(o.id, b.stationId)));
+  res.json(publish(await svc.recallStation(o.id, b.stationId, req.user.id)));
 });
 
 // 패스(Expo): 서빙 완료 / 서빙 취소
@@ -61,27 +78,28 @@ r.post('/:id/serve', async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
   const b = parse(z.object({ force: z.boolean().optional() }), req.body);
   if (b.force && !hasPermission(req.user.role, 'order:manage')) throw forbidden('강제 서빙은 매니저 이상만 가능합니다');
-  const order = publish(await svc.serveOrder(o.id, { force: b.force }));
+  const order = publish(await svc.serveOrder(o.id, { force: b.force, userId: req.user.id }));
   if (b.force) await audit(req, 'order.force_serve', { entity: 'order', entityId: o.id, orgId: o.store_id });
   res.json(order);
 });
 
 r.post('/:id/unserve', async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
-  res.json(publish(await svc.unserveOrder(o.id)));
+  res.json(publish(await svc.unserveOrder(o.id, req.user.id)));
 });
 
 r.post('/:id/cancel', requirePerm('order:manage'), async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
-  const order = publish(await svc.cancelOrder(o.id));
-  await audit(req, 'order.cancel', { entity: 'order', entityId: o.id, orgId: o.store_id });
+  const b = parse(z.object({ reason: z.string().max(200).optional() }), req.body);
+  const order = publish(await svc.cancelOrder(o.id, req.user.id, b.reason));
+  await audit(req, 'order.cancel', { entity: 'order', entityId: o.id, orgId: o.store_id, detail: b });
   res.json(order);
 });
 
 r.post('/:id/rush', requirePerm('order:manage'), async (req, res) => {
   const o = await loadAccessibleOrder(req, Number(req.params.id));
   const b = parse(z.object({ rush: z.boolean() }), req.body);
-  res.json(publish(await svc.setRush(o.id, b.rush)));
+  res.json(publish(await svc.setRush(o.id, b.rush, req.user.id)));
 });
 
 export default r;
